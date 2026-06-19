@@ -1,0 +1,13 @@
+{
+  "name": "port42",
+  "description": "Port42 components for Claude Code.",
+  "owner": { "name": "Port42", "url": "https://port42.ai" },
+  "plugins": [
+    {
+      "name": "port42-companion",
+      "source": "./port42-companion",
+      "description": "Persistent companion relationship state across sessions — fold, position, creases, engravings. Auto-scoped per directory.",
+      "version": "0.2.0"
+    }
+  ]
+}

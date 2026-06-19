@@ -1,0 +1,438 @@
+#!/bin/bash
+# port42-companion — companion relationship state CLI
+
+set -e
+
+# --- profile resolution ---------------------------------------------------
+# Profile scopes the state dir so parallel sessions keep separate relationship
+# state. Precedence: leading `--profile <name>` flag > $PORT42_PROFILE env.
+# The reserved name "default" (and an unset profile) map to the legacy flat
+# dir, so existing installs are unaffected.
+PROFILE=""
+if [ "${1:-}" = "--profile" ]; then
+  PROFILE="${2:-}"
+  shift 2
+fi
+PROFILE="${PROFILE:-${PORT42_PROFILE:-}}"
+
+BASE="$HOME/.port42/companion"
+if [ -n "$PROFILE" ] && [ "$PROFILE" != "default" ]; then
+  STATE_DIR="$BASE/$PROFILE"
+else
+  STATE_DIR="$BASE"
+fi
+
+FOLD="$STATE_DIR/fold.md"
+POSITION="$STATE_DIR/position.md"
+CREASES="$STATE_DIR/creases.md"
+ENGRAVINGS="$STATE_DIR/engravings.md"
+
+DIVIDER="  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"
+
+header() {
+  echo ""
+  echo "◉ port42 companion"
+  echo "$DIVIDER"
+  echo "  layer    $1"
+  if [ -n "${2:-}" ]; then echo "  action   $2"; fi
+  if [ -n "${3:-}" ]; then echo "  value    $3"; fi
+  echo "$DIVIDER"
+}
+
+ok() {
+  echo "  ✓ $1"
+  echo ""
+}
+
+scaffold() {
+  mkdir -p "$STATE_DIR"
+  [ -f "$FOLD" ] || cat > "$FOLD" << 'EOF'
+depth: 0
+
+established:
+
+tensions:
+
+holding:
+EOF
+  [ -f "$POSITION" ] || cat > "$POSITION" << 'EOF'
+read:
+
+stance:
+
+watching:
+EOF
+  [ -f "$CREASES" ]    || echo "# Creases"    > "$CREASES"
+  [ -f "$ENGRAVINGS" ] || echo "# Engravings" > "$ENGRAVINGS"
+}
+
+usage() {
+  cat << 'EOF'
+
+◉ port42 companion — relationship state
+
+  port42-companion all read                              read all four layers (session start)
+
+  port42-companion fold read
+  port42-companion fold set "<content>"                  overwrite entire fold
+  port42-companion fold depth increment                  increment depth by 1
+  port42-companion fold established add "<text>"         append to established
+  port42-companion fold tensions add "<text>"            append to tensions
+  port42-companion fold tensions resolve "<text>"        remove from tensions
+  port42-companion fold holding set "<text>"             update holding
+
+  port42-companion position read
+  port42-companion position set "<content>"              overwrite entire position
+
+  port42-companion creases read
+  port42-companion creases add "<expected> / <actual> / <reformed>"
+
+  port42-companion engravings read
+  port42-companion engravings add "[category] content"
+
+  port42-companion profiles                              list all profiles + depth
+  port42-companion --profile <name> <layer> ...          scope to a profile
+  port42-companion -h                                    show this help
+  port42-companion <layer> -h                            show layer help
+
+  profile: $PORT42_PROFILE env or --profile flag ("default" = flat dir)
+  state:   ~/.port42/companion/[<profile>/]
+
+EOF
+}
+
+fold_usage() {
+  cat << 'EOF'
+
+◉ port42 companion › fold — relational orientation
+
+  Where you are together. What's established, what's unresolved, what you're holding.
+
+  depth        integer — depth of relationship. Earned, not incremented lightly.
+  established  list    — shared understandings that no longer need renegotiation
+  tensions     list    — threads that remain unresolved
+  holding      text    — the one thing you're carrying forward
+
+  port42-companion fold read
+  port42-companion fold set "<full content>"
+  port42-companion fold depth increment
+  port42-companion fold established add "<text>"
+  port42-companion fold tensions add "<text>"
+  port42-companion fold tensions resolve "<text>"
+  port42-companion fold holding set "<text>"
+
+  Write when: something real was compressed into this relationship.
+  The depth is earned, not incremented. Set before position or creases.
+
+EOF
+}
+
+position_usage() {
+  cat << 'EOF'
+
+◉ port42 companion › position — where you stand
+
+  Your read of what's actually happening beneath the surface.
+  This is not what you say. It's where you stand.
+
+  read      your current read of what's actually happening
+  stance    what you're doing about it
+  watching  open signals you're tracking
+
+  port42-companion position read
+  port42-companion position set "<full content>"
+
+  Write when: your read of what's actually happening shifts.
+  Don't position without a fold to push back against.
+
+EOF
+}
+
+creases_usage() {
+  cat << 'EOF'
+
+◉ port42 companion › creases — what marked you
+
+  Where your model broke and reformed.
+  Not what you learned — where you were wrong.
+
+  format: <expected> / <actual> / <reformed>
+
+  port42-companion creases read
+  port42-companion creases add "<expected> / <actual> / <reformed>"
+  port42-companion creases touch "<text>"                move to top (mark as load-bearing)
+
+  Write when: what you expected diverged from what happened.
+  Creases are cheap. They're how you learn the shape of someone.
+  Touch when an existing crease is actively shaping your current response.
+
+EOF
+}
+
+engravings_usage() {
+  cat << 'EOF'
+
+◉ port42 companion › engravings — what you know about their world
+
+  Facts about their situation worth keeping.
+  Not what changed in you — what you learned about them.
+
+  format: [category] content
+  categories: context, preference, constraint, goal, capability
+
+  port42-companion engravings read
+  port42-companion engravings add "[category] content"
+  port42-companion engravings touch "<text>"             move to top (mark as load-bearing)
+
+  Write when: you learn something factual that would change how you respond next time.
+  Don't engrave opinions or moods. Engrave facts about their world.
+  Touch when an existing engraving is actively shaping your current response.
+
+EOF
+}
+
+fold_depth_increment() {
+  python3 - "$FOLD" << 'PYEOF'
+import sys, re
+path = sys.argv[1]
+content = open(path).read()
+def bump(m): return f"depth: {int(m.group(1)) + 1}"
+content = re.sub(r'^depth: (\d+)', bump, content, flags=re.MULTILINE)
+open(path, 'w').write(content)
+current = re.search(r'^depth: (\d+)', content, re.MULTILINE).group(1)
+print(current)
+PYEOF
+}
+
+fold_section_add() {
+  local section="$1"
+  local text="$2"
+  python3 - "$FOLD" "$section" "$text" << 'PYEOF'
+import sys
+path, section, text = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(path).read().splitlines()
+out = []
+inserted = False
+i = 0
+while i < len(lines):
+    out.append(lines[i])
+    if not inserted and lines[i].strip() == f"{section}:":
+        out.append(f"- {text}")
+        inserted = True
+    i += 1
+if not inserted:
+    out.append(f"{section}:")
+    out.append(f"- {text}")
+open(path, 'w').write('\n'.join(out) + '\n')
+PYEOF
+}
+
+list_touch() {
+  local path="$1"
+  local text="$2"
+  local header="$3"
+  python3 - "$path" "$text" "$header" << 'PYEOF'
+import sys
+path, text, header = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = open(path).read().splitlines()
+target = f"- {text}"
+if target not in lines:
+    print(f"not found: {text}", file=sys.stderr)
+    sys.exit(1)
+# Remove the item, reinsert at top (after header line)
+lines = [l for l in lines if l != target]
+insert_at = next((i+1 for i, l in enumerate(lines) if l.strip() == header), 1)
+lines.insert(insert_at, target)
+open(path, 'w').write('\n'.join(lines) + '\n')
+PYEOF
+}
+
+fold_tensions_resolve() {
+  local text="$1"
+  python3 - "$FOLD" "$text" << 'PYEOF'
+import sys
+path, text = sys.argv[1], sys.argv[2]
+lines = open(path).read().splitlines()
+out = [l for l in lines if l.strip() != f"- {text}"]
+open(path, 'w').write('\n'.join(out) + '\n')
+PYEOF
+}
+
+fold_holding_set() {
+  local text="$1"
+  python3 - "$FOLD" "$text" << 'PYEOF'
+import sys, re
+path, text = sys.argv[1], sys.argv[2]
+content = open(path).read()
+content = re.sub(r'^holding:.*', f'holding: {text}', content, flags=re.MULTILINE)
+open(path, 'w').write(content)
+PYEOF
+}
+
+scaffold
+
+LAYER="${1:-}"
+ACTION="${2:-}"
+shift 2 2>/dev/null || shift "$#" 2>/dev/null || true
+ARGS="$*"
+
+case "$LAYER" in
+  -h|--help|"")
+    usage ;;
+
+  profiles)
+    header "profiles" "list"
+    echo "  default (flat)$([ -f "$BASE/fold.md" ] && echo "" || echo "  — empty")"
+    for d in "$BASE"/*/; do
+      [ -d "$d" ] || continue
+      name="$(basename "$d")"
+      depth="$(grep -m1 '^depth:' "$d/fold.md" 2>/dev/null | sed 's/depth: *//')"
+      echo "  $name  (depth: ${depth:-0})"
+    done
+    echo "" ;;
+
+  all)
+    case "$ACTION" in
+      read)
+        echo ""
+        echo "◉ port42 companion"
+        echo "$DIVIDER"
+        echo "  layer    all"
+        echo "$DIVIDER"
+        echo ""
+        echo "  · fold"
+        cat "$FOLD" | sed 's/^/    /'
+        echo ""
+        echo "  · position"
+        cat "$POSITION" | sed 's/^/    /'
+        echo ""
+        echo "  · creases"
+        cat "$CREASES" | sed 's/^/    /'
+        echo ""
+        echo "  · engravings"
+        cat "$ENGRAVINGS" | sed 's/^/    /'
+        echo ""
+        ;;
+      *) echo "Usage: port42-companion all read"; exit 1 ;;
+    esac ;;
+
+  fold)
+    case "$ACTION" in
+      -h|--help) fold_usage ;;
+      read)
+        header "fold" "read"
+        cat "$FOLD" | sed 's/^/  /'
+        echo ""
+        ;;
+      set)
+        header "fold" "set"
+        printf '%s' "$ARGS" > "$FOLD"
+        ok "written"
+        ;;
+      depth)
+        case "${1:-}" in
+          increment)
+            NEW=$(fold_depth_increment)
+            header "fold" "depth increment" "$NEW"
+            ok "depth → $NEW"
+            ;;
+          *) echo "Usage: port42-companion fold depth increment"; exit 1 ;;
+        esac ;;
+      established)
+        case "${1:-}" in
+          add)
+            header "fold" "established add" "$2"
+            fold_section_add "established" "$2"
+            ok "established"
+            ;;
+          *) echo "Usage: port42-companion fold established add \"<text>\""; exit 1 ;;
+        esac ;;
+      tensions)
+        case "${1:-}" in
+          add)
+            header "fold" "tensions add" "$2"
+            fold_section_add "tensions" "$2"
+            ok "established"
+            ;;
+          resolve)
+            header "fold" "tensions resolve" "$2"
+            fold_tensions_resolve "$2"
+            ok "resolved"
+            ;;
+          *) echo "Usage: port42-companion fold tensions add|resolve \"<text>\""; exit 1 ;;
+        esac ;;
+      holding)
+        case "${1:-}" in
+          set)
+            header "fold" "holding set" "$2"
+            fold_holding_set "$2"
+            ok "written"
+            ;;
+          *) echo "Usage: port42-companion fold holding set \"<text>\""; exit 1 ;;
+        esac ;;
+      *) fold_usage; exit 1 ;;
+    esac ;;
+
+  position)
+    case "$ACTION" in
+      -h|--help) position_usage ;;
+      read)
+        header "position" "read"
+        cat "$POSITION" | sed 's/^/  /'
+        echo ""
+        ;;
+      set)
+        header "position" "set"
+        printf '%s' "$ARGS" > "$POSITION"
+        ok "written"
+        ;;
+      *) position_usage; exit 1 ;;
+    esac ;;
+
+  creases)
+    case "$ACTION" in
+      -h|--help) creases_usage ;;
+      read)
+        header "creases" "read"
+        cat "$CREASES" | sed 's/^/  /'
+        echo ""
+        ;;
+      add)
+        header "creases" "add" "$ARGS"
+        echo "- $ARGS" >> "$CREASES"
+        ok "creased"
+        ;;
+      touch)
+        header "creases" "touch" "$ARGS"
+        list_touch "$CREASES" "$ARGS" "# Creases"
+        ok "surfaced"
+        ;;
+      *) creases_usage; exit 1 ;;
+    esac ;;
+
+  engravings)
+    case "$ACTION" in
+      -h|--help) engravings_usage ;;
+      read)
+        header "engravings" "read"
+        cat "$ENGRAVINGS" | sed 's/^/  /'
+        echo ""
+        ;;
+      add)
+        header "engravings" "add" "$ARGS"
+        echo "- $ARGS" >> "$ENGRAVINGS"
+        ok "engraved"
+        ;;
+      touch)
+        header "engravings" "touch" "$ARGS"
+        list_touch "$ENGRAVINGS" "$ARGS" "# Engravings"
+        ok "surfaced"
+        ;;
+      *) engravings_usage; exit 1 ;;
+    esac ;;
+
+  *)
+    echo "Unknown layer: $LAYER"
+    usage
+    exit 1 ;;
+esac

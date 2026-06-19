@@ -1,0 +1,6 @@
+{
+  "name": "port42-companion",
+  "description": "Persistent companion relationship state across sessions — fold, position, creases, engravings. Per-profile, auto-loaded at session start.",
+  "version": "0.2.0",
+  "author": { "name": "Port42", "url": "https://port42.ai" }
+}
