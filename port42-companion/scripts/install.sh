@@ -10,7 +10,10 @@ set -e
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_SRC="$SKILL_DIR/bin/port42-companion"
-PROTOCOL="$SKILL_DIR/protocol.md"
+# Single source of truth for the prose protocol. The plugin's SessionStart hook
+# injects this same file; the legacy CLAUDE.md path below prefixes a self-read line
+# since there's no hook to do the read for it.
+PROTOCOL="$SKILL_DIR/references/protocol-inject.md"
 
 CONFIG_DIR_OVERRIDE=""
 UPDATE=false
@@ -55,6 +58,12 @@ fi
 {
   echo ""
   echo "<!-- port42-companion:start -->"
+  echo "# Companion Relationship State"
+  echo ""
+  echo "At the start of every session, run \`port42-companion all read\` and read the"
+  echo "output before responding — that output is your relationship state (referred to"
+  echo "below as \"the state above\")."
+  echo ""
   cat "$PROTOCOL"
   echo "<!-- port42-companion:end -->"
 } >> "$CLAUDE_MD"

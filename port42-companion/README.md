@@ -89,8 +89,10 @@ Relationship state is stored at `~/.port42/companion/[<profile>/]`.
 ### Legacy install (no plugin)
 
 `scripts/install.sh` still works for environments without plugin support: it copies the CLI
-to `~/.local/bin/` and injects `protocol.md` into a `CLAUDE.md`. The plugin is preferred —
-the hook makes the read deterministic, which the CLAUDE.md prose injection does not.
+to `~/.local/bin/` and injects the prose protocol (`references/protocol-inject.md`, the same
+file the hook uses) into a `CLAUDE.md`, prefixed with a self-read line since there's no hook.
+The plugin is preferred — the hook makes the read deterministic, which the CLAUDE.md prose
+injection does not.
 
 ---
 
