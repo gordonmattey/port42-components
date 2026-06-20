@@ -7,7 +7,7 @@
       "name": "port42-companion",
       "source": "./port42-companion",
       "description": "Persistent companion relationship state across sessions — fold, position, creases, engravings. Auto-scoped per directory.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     }
   ]
 }

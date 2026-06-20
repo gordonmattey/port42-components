@@ -45,8 +45,8 @@ PROFILE="${PROFILE:-default}"
 # $CLAUDE_ENV_FILE before each Bash invocation.
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
-    echo "PATH=$ROOT/bin:$PATH"
-    echo "PORT42_PROFILE=$PROFILE"
+    echo "export PATH=$ROOT/bin:$PATH"
+    echo "export PORT42_PROFILE=$PROFILE"
   } >> "$CLAUDE_ENV_FILE"
 fi
 
