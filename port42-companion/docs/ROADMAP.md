@@ -42,6 +42,45 @@ write-nudge is the next hardening lever — deferred until Thread 2 shows the la
 hardening, and arguably best built first as *instrumentation*, so the re-litigation eval
 above isn't confounded by "the layer was on but never wrote anything."
 
+### Resolved (2026-06-20): the real cause was a profile-routing bug, not write discretion
+
+Most of the analysis below (lost driver, framing/salience, fragmentation,
+instrumentation) was chasing the wrong thing. The dominant reason named per-directory
+profiles were empty while `default` filled up was a **one-word bug**: the SessionStart
+hook wrote `PORT42_PROFILE=$PROFILE` to `$CLAUDE_ENV_FILE` **without `export`**. The
+sourced value stayed a non-exported shell variable, so the `port42-companion` CLI (a
+child process) never saw it and every write fell back to the flat `default` store.
+PATH survived only because it keeps its pre-existing exported attribute.
+
+So per-directory profiles never actually worked through the plugin: the hook's *read*
+looked correct (it sets the profile inline on its own `all read`), but the model's
+*writes* always misrouted to `default`. That is the true explanation of
+"worked-before-not-now" and of `default` being a cross-context dumping ground.
+
+Fixed in **0.2.1** (`export` both PATH and PORT42_PROFILE). Validated end-to-end: a
+fresh window in `site-rescues` showed `PORT42_PROFILE` exported to child processes, and
+a bare `port42-companion creases add` routed to `site-rescues/`, not `default`. Note
+`CLAUDE_ENV_FILE` is empty in the *tool* shell by design — Claude Code hands it to the
+hook and sources its exported vars downstream, so the signal to check is "is
+PORT42_PROFILE exported", not "is CLAUDE_ENV_FILE set". `0.2.2` adds
+`port42-companion whoami` (prints resolved profile + source + state dir) so this check
+is one command.
+
+Still genuinely open (not caused by the bug, and not fixed by it):
+- **Fragmentation.** Per-dir scoping means knowledge does not compound across contexts,
+  and shared preferences (e.g. "never use em dashes") siloed in one profile never reach
+  the others. Decide whether some state belongs in a shared profile every session reads.
+- **Stranded `default`.** The historically misrouted writes (site-rescue, Port42
+  positioning, the em-dash preference) sit in `default` mixed with the engine's
+  consulting state. Decide what to migrate to its proper profile.
+- **Framing/skill improvements** shipped (imperative protocol, proactive-write skill).
+  Still reasonable, but they were not the blocker; treat their value as unproven until
+  routing-fixed sessions accrue write-rate data.
+
+The Stop-hook / instrumentation material below is retained as design notes, but is now
+lower priority: with routing fixed, just let restarted (0.2.1+) windows run and read the
+named profiles in a few days.
+
 ### Decision (2026-06-19): instrument writes, don't nudge yet
 
 Considered building the Stop-hook write-nudge now. **Held off — instrument first,

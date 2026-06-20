@@ -9,11 +9,15 @@ set -e
 # The reserved name "default" (and an unset profile) map to the legacy flat
 # dir, so existing installs are unaffected.
 PROFILE=""
+PROFILE_SOURCE="unset (flat default)"
 if [ "${1:-}" = "--profile" ]; then
   PROFILE="${2:-}"
+  PROFILE_SOURCE="--profile flag"
   shift 2
+elif [ -n "${PORT42_PROFILE:-}" ]; then
+  PROFILE="$PORT42_PROFILE"
+  PROFILE_SOURCE="PORT42_PROFILE env"
 fi
-PROFILE="${PROFILE:-${PORT42_PROFILE:-}}"
 
 BASE="$HOME/.port42/companion"
 if [ -n "$PROFILE" ] && [ "$PROFILE" != "default" ]; then
@@ -91,6 +95,7 @@ usage() {
   port42-companion engravings add "[category] content"
 
   port42-companion profiles                              list all profiles + depth
+  port42-companion whoami                                show resolved profile + source + state dir
   port42-companion --profile <name> <layer> ...          scope to a profile
   port42-companion -h                                    show this help
   port42-companion <layer> -h                            show layer help
@@ -279,6 +284,14 @@ ARGS="$*"
 case "$LAYER" in
   -h|--help|"")
     usage ;;
+
+  whoami)
+    header "whoami"
+    echo "  profile  ${PROFILE:-default}"
+    echo "  source   $PROFILE_SOURCE"
+    echo "  state    $STATE_DIR"
+    echo "$DIVIDER"
+    echo "" ;;
 
   profiles)
     header "profiles" "list"
